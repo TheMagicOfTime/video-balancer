@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package balancer;
+
+option go_package = "api/proto";
+
+service VideoBalancer {
+  rpc GetVideoURL(VideoRequest) returns (VideoResponse) {}
+}
+
+message VideoRequest {
+  string video = 1;
+}
+
+message VideoResponse {
+  string url = 1;
+}
