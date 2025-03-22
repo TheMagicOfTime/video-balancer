@@ -1,0 +1,163 @@
+# Video Traffic Balancer Service
+
+Сервис-балансировщик для распределения видео-трафика между оригинальными серверами и CDN.
+
+## Описание проекта
+
+Сервис принимает запросы с URL видео-файла и перенаправляет запросы согласно заданным правилам:
+- Каждый 10-й запрос отправляется напрямую на сервер оригиналов
+- Остальные запросы перенаправляются через CDN
+
+## Требования
+
+- Docker (версия 19.03 или выше)
+- Docker Compose (версия 1.27 или выше)
+- golang 1.17 (или выше)
+
+## Установка и запуск
+
+1. **Клонируйте репозиторий**:
+   ```bash
+   git clone https://github.com/TheMagicOfTime/video-balancer.git
+   cd video-balancer
+   ```
+
+2. **Запустите сервис через Docker Compose**:
+   
+   Для запуска в фоновом режиме:
+   ```bash
+   docker-compose up -d
+   ```
+   
+   Для запуска с автоматическим выполнением нагрузочного тестирования и последующим завершением:
+   ```bash
+   docker-compose up --exit-code-from loadtest
+   ```
+   
+   Эти команды запустят два контейнера:
+   - `balancer` - основной сервис балансировки видео-трафика
+   - `ghz-tester` - контейнер для нагрузочного тестирования
+
+3. **Проверьте работу сервиса**:
+   ```bash
+   # Выполните 10 последовательных запросов для проверки балансировки
+   for i in {1..10}; do
+     echo "Запрос $i:"
+     grpcurl -plaintext -proto api/proto/balancer.proto -d '{"video": "http://s1.origin-cluster/video/123/xcg2djHckad.m3u8"}' localhost:50051 balancer.VideoBalancer/GetVideoURL
+     echo ""
+   done
+   ```
+
+   Вы увидите, что каждый 10-й запрос возвращает оригинальный URL, а остальные перенаправляются через CDN:
+   ```
+   Запрос 1:
+   {
+     "url": "http://cdn.example.com/s1/video/123/xcg2djHckad.m3u8"
+   }
+   
+   Запрос 2:
+   {
+     "url": "http://cdn.example.com/s1/video/123/xcg2djHckad.m3u8"
+   }
+   
+   ...
+   
+   Запрос 10:
+   {
+     "url": "http://s1.origin-cluster/video/123/xcg2djHckad.m3u8"
+   }
+   ```
+
+## Конфигурация
+
+Сервис настраивается через переменные окружения в файле docker-compose.yml:
+
+- `CDN_HOST` - хост CDN сервиса (по умолчанию "cdn.example.com")
+- `PORT` - порт для gRPC сервера (по умолчанию 50051)
+
+Пример изменения настроек:
+```yaml
+environment:
+  - CDN_HOST=my-custom-cdn.example.org
+  - PORT=8080
+```
+
+## Структура проекта
+
+```
+video-balancer/
+  ├── api/
+  │   └── proto/              # Proto файлы и сгенерированный код
+  ├── cmd/
+  │   └── video-balancer/             # Точка входа для сервера
+  ├── internal/
+  │   ├── config/             # Конфигурация приложения
+  │   ├── service/            # Реализация gRPC сервиса
+  │   └── balancer/           # Логика балансировки
+  ├── scripts/                # Скрипты для тестирования
+  ├── Dockerfile              # Инструкции сборки сервиса
+  ├── Dockerfile.ghz          # Инструкции сборки для тестирования
+  ├── docker-compose.yml      # Конфигурация Docker Compose
+  ├── go.mod                  # Зависимости Go
+  └── go.sum
+```
+
+## Алгоритм работы
+
+1. Сервис получает URL в формате `http://s1.origin-cluster/video/123/xcg2djHckad.m3u8`, где `s1` - идентификатор сервера в кластере оригиналов.
+2. Каждый 10-й запрос отправляется на оригинальный URL (напрямую на сервер оригиналов).
+3. Остальные запросы перенаправляются на CDN по шаблону `http://{CDN_HOST}/{server_id}{path}`, например `http://cdn.example.com/s1/video/123/xcg2djHckad.m3u8`.
+
+## Нагрузочное тестирование
+
+Сервис успешно проходит нагрузочное тестирование, обрабатывая более 29000 запросов в секунду (при требовании 10000 запросов/сек) на ryzen 5700x и 32GB RAM DDR4 3200:
+
+```
+Summary:
+  Count:        30000
+  Total:        1.03 s
+  Slowest:      22.31 ms
+  Fastest:      0.14 ms
+  Average:      1.78 ms
+  Requests/sec: 29088.98
+```
+
+Сервис успешно проходит нагрузочное тестирование, обрабатывая более 15000 запросов в секунду (при требовании 10000 запросов/сек) на 4 ядрах i7-8700 и 8GB RAM DDR4 3200:
+
+```
+Summary:
+  Count:        30000
+  Total:        1.92 s
+  Slowest:      51.58 ms
+  Fastest:      0.14 ms
+  Average:      3.72 ms
+  Requests/sec: 15594.82
+```
+
+Для запуска тестирования можно использовать:
+
+```bash
+# С помощью docker-compose
+docker-compose up loadtest
+
+# Или напрямую с ghz
+ghz --insecure \
+  --proto api/proto/balancer.proto \
+  --call balancer.VideoBalancer.GetVideoURL \
+  -d '{"video": "http://s1.origin-cluster/video/123/xcg2djHckad.m3u8"}' \
+  -c 100 \
+  -n 30000 \
+  localhost:50051
+```
+
+## Автогенерируемые файлы
+
+В проекте используются автогенерируемые файлы:
+- `api/proto/balancer.pb.go`
+- `api/proto/balancer_grpc.pb.go`
+
+Эти файлы сгенерированы с помощью `protoc` и включены в репозиторий для удобства запуска. Если вы хотите перегенерировать их, используйте:
+
+```bash
+protoc --go_out=. --go-grpc_out=. api/proto/balancer.proto
+```
