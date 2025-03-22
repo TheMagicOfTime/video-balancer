@@ -1,0 +1,16 @@
+FROM golang:1.23-alpine AS builder
+
+RUN apk add --no-cache git
+
+RUN go install github.com/bojand/ghz/cmd/ghz@latest
+
+FROM alpine:latest
+
+COPY --from=builder /go/bin/ghz /usr/local/bin/ghz
+
+WORKDIR /protos
+
+COPY ./scripts/run_tests.sh /usr/local/bin/run_tests.sh
+RUN chmod +x /usr/local/bin/run_tests.sh
+
+ENTRYPOINT ["run_tests.sh"]
