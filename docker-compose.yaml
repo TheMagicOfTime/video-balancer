@@ -1,0 +1,26 @@
+version: '3'
+
+services:
+  balancer:
+    image: docker.io/themagicoftime/balancer:latest
+    container_name: balancer
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - CDN_HOST=cdn.example.com
+      - PORT=50051
+    ports:
+      - "50051:50051"
+    restart: unless-stopped
+
+  loadtest:
+    image: docker.io/themagicoftime/ghz-tester:latest
+    container_name: ghz-tester
+    build:
+      context: .
+      dockerfile: Dockerfile.ghz
+    depends_on:
+      - balancer
+    volumes:
+      - ./api/proto:/protos
